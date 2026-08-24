@@ -12,6 +12,7 @@ Neon pink, slash-command moderation for an El Paso, Texas roleplay community. Th
 - Roblox tax calculator, server and user info, latency ping, and a complete command directory.
 - Administrator-only `/say`, with plain text or embed mode and a custom hex color.
 - Mention the bot by itself for a neon pink profile/status panel.
+- Session management with role-restricted start, vote, shutdown, and boost commands. Vote thresholds and active session state persist in `bot_data.json`.
 
 ## Setup
 
@@ -38,7 +39,12 @@ Never commit the token. Slash commands are synced globally in `setup_hook`, so D
 
 ## Role configuration
 
-At the top of `main.py`, replace `STAFF_ROLE_ID = 0`, `ADMIN_ROLE_ID = 0`, and `LOG_CHANNEL_ID = 0` with your Discord role and channel IDs. The bot fails closed while either required role is still `0`. `LOG_CHANNEL_ID` is the default activity-log channel; `/logging channel` can override it for an individual server, while `/logging-disable` disables that server's logging. Enable Developer Mode in Discord, then right-click each role or channel and choose **Copy ID**.
+At the top of `main.py`, replace `STAFF_ROLE_ID = 0`, `ADMIN_ROLE_ID = 0`, `SESSION_ROLE_ID = 0`, and `LOG_CHANNEL_ID = 0` with your Discord role and channel IDs. The bot fails closed while a required role is still `0`. `SESSION_ROLE_ID` controls all four session-management commands. `LOG_CHANNEL_ID` is the default activity-log channel; `/logging channel` can override it for an individual server, while `/logging-disable` disables that server's logging. Enable Developer Mode in Discord, then right-click each role or channel and choose **Copy ID**.
+
+Set these optional environment variables to add the session artwork and server invite used by the embeds:
+
+- `SERVER_INVITE_URL`: invite URL used by the **Join Server** button on startup embeds.
+- `SESSION_START_BANNER_URL`, `SESSION_VOTE_BANNER_URL`, `SESSION_SHUTDOWN_BANNER_URL`, and `SESSION_BOOST_BANNER_URL`: one image URL per session embed type.
 
 Staff access is required for `/kick`, `/timeout`, `/untimeout`, `/warn`, `/warnings`, `/clearwarnings`, `/purge`, `/slowmode`, `/nickname`, `/say`, `/sticky`, and `/sticky-remove`.
 
@@ -96,6 +102,15 @@ Run `/directory` in Discord for the live, in-bot directory. It is maintained at 
 - `/ping`: Show latency and operational status.
 - `/directory`: Show the same live command map maintained in `main.py`.
 - `/help`: Show the El Paso RP overview.
+
+### Sessions
+
+- `/session-start`: Start a session, ping `@here`, send a join button, and DM users who voted.
+- `/session-vote required_votes`: Open a vote with a green button. The session starts automatically at the requested vote count and pings `@here`.
+- `/session-shutdown`: End the active session.
+- `/session-boost`: Announce that the active session needs more players.
+
+Only members with `SESSION_ROLE_ID` can run session commands. Members can vote once per vote message. Voters receive a DM when the session starts saying they will be warned if they do not join the game. The bot needs **Mention @everyone, @here, and All Roles** permission to deliver the `@here` notifications, and users must allow DMs to receive the reminder.
 
 ## Production notes
 

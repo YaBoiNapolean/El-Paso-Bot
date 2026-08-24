@@ -17,7 +17,13 @@ DATA_FILE = Path(os.getenv("BOT_DATA_FILE", "bot_data.json"))
 # Replace these with the Discord role IDs used by your server.
 STAFF_ROLE_ID = 0
 ADMIN_ROLE_ID = 0
+SESSION_ROLE_ID = 0
 LOG_CHANNEL_ID = 0
+SERVER_INVITE_URL = os.getenv("SERVER_INVITE_URL", "")
+SESSION_START_BANNER_URL = os.getenv("SESSION_START_BANNER_URL", "")
+SESSION_VOTE_BANNER_URL = os.getenv("SESSION_VOTE_BANNER_URL", "")
+SESSION_SHUTDOWN_BANNER_URL = os.getenv("SESSION_SHUTDOWN_BANNER_URL", "")
+SESSION_BOOST_BANNER_URL = os.getenv("SESSION_BOOST_BANNER_URL", "")
 
 COMMAND_DIRECTORY = {
     "Moderation": {
@@ -42,6 +48,12 @@ COMMAND_DIRECTORY = {
         "/ping": "Check latency and status.", "/directory": "Show every command.",
         "/help": "Show the El Paso RP help panel.",
     },
+    "Sessions": {
+        "/session-start": "Start a session and notify the server.",
+        "/session-vote": "Open a vote to auto-start a session.",
+        "/session-shutdown": "Shut down the active session.",
+        "/session-boost": "Announce a session boost.",
+    },
 }
 
 
@@ -58,9 +70,11 @@ DATA = load_data()
 
 
 def guild_data(guild_id: int) -> dict[str, Any]:
-    return DATA.setdefault("guilds", {}).setdefault(
+    data = DATA.setdefault("guilds", {}).setdefault(
         str(guild_id), {"afk": {}, "warnings": {}, "stickies": {}}
     )
+    data.setdefault("session", {"active": False, "required_votes": 0, "voters": []})
+    return data
 
 
 def save_data() -> None:
@@ -101,6 +115,91 @@ def require_role(role_id: int, role_name: str):
 
 staff_only = require_role(STAFF_ROLE_ID, "staff")
 admin_only = require_role(ADMIN_ROLE_ID, "admin")
+session_only = require_role(SESSION_ROLE_ID, "session perms")
+
+
+def session_embed(title: str, description: str, banner_url: str, colour: discord.Colour = PINK) -> discord.Embed:
+    embed = make_embed(title, description, colour)
+    if banner_url:
+        embed.set_image(url=banner_url)
+    return embed
+
+
+class SessionLinkView(discord.ui.View):
+    def __init__(self) -> None:
+        super().__init__(timeout=None)
+        button = discord.ui.Button(
+            label="Join Server", style=discord.ButtonStyle.link,
+            url=SERVER_INVITE_URL or "https://discord.com", disabled=not bool(SERVER_INVITE_URL)
+        )
+        self.add_item(button)
+
+
+class SessionVoteView(discord.ui.View):
+    def __init__(self, guild_id: int, vote_count: int = 0) -> None:
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.vote_button = discord.ui.Button(
+            label=f"Vote ({vote_count})", style=discord.ButtonStyle.success,
+            custom_id=f"session-vote:{guild_id}"
+        )
+        self.vote_button.callback = self.cast_vote
+        self.add_item(self.vote_button)
+
+    async def cast_vote(self, interaction: discord.Interaction) -> None:
+        data = guild_data(self.guild_id)
+        session = data["session"]
+        if session.get("active"):
+            await interaction.response.send_message("A session is already active.", ephemeral=True)
+            return
+        if session.get("vote_message_id") and interaction.message.id != session["vote_message_id"]:
+            await interaction.response.send_message("This vote is no longer active.", ephemeral=True)
+            return
+        voter_id = str(interaction.user.id)
+        voters = session.setdefault("voters", [])
+        if voter_id in voters:
+            await interaction.response.send_message("You have already voted for this session.", ephemeral=True)
+            return
+        voters.append(voter_id)
+        save_data()
+        vote_count = len(voters)
+        self.vote_button.label = f"Vote ({vote_count})"
+        required_votes = max(1, int(session.get("required_votes", 1)))
+        if vote_count >= required_votes and interaction.guild and interaction.channel:
+            await interaction.response.defer()
+            await interaction.message.edit(view=self)
+            await start_session(interaction.guild, interaction.channel)
+            await interaction.followup.send("The required votes were reached. The session has started.", ephemeral=True)
+            return
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send(
+            f"Vote recorded: **{vote_count}/{required_votes}**.", ephemeral=True
+        )
+
+
+async def start_session(guild: discord.Guild, channel: discord.abc.Messageable) -> None:
+    session = guild_data(guild.id)["session"]
+    if session.get("active"):
+        return
+    voters = list(session.get("voters", []))
+    session.update({"active": True, "required_votes": 0, "voters": [], "vote_message_id": None})
+    save_data()
+    await channel.send(
+        content="@here",
+        embed=session_embed(
+            "EL PASO RP | Session Started",
+            "The roleplay session is now live. Join the server using the button below and be ready to play.",
+            SESSION_START_BANNER_URL,
+        ),
+        view=SessionLinkView(),
+        allowed_mentions=discord.AllowedMentions(everyone=True),
+    )
+    for voter_id in voters:
+        try:
+            user = await bot.fetch_user(int(voter_id))
+            await user.send("The session has started. You will be warned if you do not join the game.")
+        except (discord.HTTPException, discord.Forbidden, ValueError):
+            continue
 
 
 def remove_afk_prefix(nickname: str | None) -> str | None:
@@ -143,6 +242,10 @@ class ElPasoBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, help_command=None)
 
     async def setup_hook(self) -> None:
+        for guild_id, data in DATA.get("guilds", {}).items():
+            session = data.get("session", {})
+            if not session.get("active") and session.get("required_votes", 0):
+                self.add_view(SessionVoteView(int(guild_id), len(session.get("voters", []))))
         await self.tree.sync()
 
     async def on_ready(self) -> None:
@@ -222,6 +325,79 @@ async def help_command(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(embed=make_embed(
         "El Paso RP Mod-Bot",
         "A neon pink moderation suite for private roleplay servers.\n\nUse **/directory** for the full command list. Moderation commands require the matching Discord permission.",
+    ))
+
+
+@bot.tree.command(name="session-start", description="Start a roleplay session")
+@session_only
+@app_commands.guild_only()
+async def session_start(interaction: discord.Interaction) -> None:
+    session = guild_data(interaction.guild_id)["session"]
+    if session.get("active"):
+        await interaction.response.send_message("A session is already active.", ephemeral=True)
+        return
+    await interaction.response.defer()
+    await start_session(interaction.guild, interaction.channel)
+    await interaction.followup.send("Session started.", ephemeral=True)
+
+
+@bot.tree.command(name="session-vote", description="Open a vote to automatically start a session")
+@session_only
+@app_commands.guild_only()
+@app_commands.describe(required_votes="Votes needed before the session starts automatically")
+async def session_vote(
+    interaction: discord.Interaction,
+    required_votes: app_commands.Range[int, 1, 100],
+) -> None:
+    session = guild_data(interaction.guild_id)["session"]
+    if session.get("active"):
+        await interaction.response.send_message("A session is already active.", ephemeral=True)
+        return
+    session.update({"required_votes": int(required_votes), "voters": []})
+    save_data()
+    await interaction.response.send_message(
+        content="@here",
+        embed=session_embed(
+            "EL PASO RP | Session Vote",
+            f"Vote to start the next roleplay session. The session will start automatically when **{required_votes}** vote(s) are reached.\n\nCurrent votes: **0/{required_votes}**",
+            SESSION_VOTE_BANNER_URL,
+        ),
+        view=SessionVoteView(interaction.guild_id),
+        allowed_mentions=discord.AllowedMentions(everyone=True),
+    )
+    vote_message = await interaction.original_response()
+    session["vote_message_id"] = vote_message.id
+    save_data()
+
+
+@bot.tree.command(name="session-shutdown", description="Shut down the active roleplay session")
+@session_only
+@app_commands.guild_only()
+async def session_shutdown(interaction: discord.Interaction) -> None:
+    session = guild_data(interaction.guild_id)["session"]
+    if not session.get("active"):
+        await interaction.response.send_message("There is no active session.", ephemeral=True)
+        return
+    session.update({"active": False, "required_votes": 0, "voters": [], "vote_message_id": None})
+    save_data()
+    await interaction.response.send_message(embed=session_embed(
+        "EL PASO RP | Session Shutdown",
+        "The roleplay session has ended. Thank you for playing.",
+        SESSION_SHUTDOWN_BANNER_URL,
+    ))
+
+
+@bot.tree.command(name="session-boost", description="Announce a roleplay session boost")
+@session_only
+@app_commands.guild_only()
+async def session_boost(interaction: discord.Interaction) -> None:
+    if not guild_data(interaction.guild_id)["session"].get("active"):
+        await interaction.response.send_message("There is no active session to boost.", ephemeral=True)
+        return
+    await interaction.response.send_message(embed=session_embed(
+        "EL PASO RP | Session Boost",
+        "The active session needs more players. Join the game and help keep the roleplay moving.",
+        SESSION_BOOST_BANNER_URL,
     ))
 
 
