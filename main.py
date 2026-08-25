@@ -32,6 +32,7 @@ ENABLE_PRIVILEGED_INTENTS = os.getenv("ENABLE_PRIVILEGED_INTENTS", "false").lowe
 STAFF_ROLE_ID = env_int("STAFF_ROLE_ID")
 ADMIN_ROLE_ID = env_int("ADMIN_ROLE_ID")
 SESSION_ROLE_ID = env_int("SESSION_ROLE_ID")
+SESSION_CHANNEL_ID = 1515219157506064487
 LOG_CHANNEL_ID = env_int("LOG_CHANNEL_ID")
 SERVER_INVITE_URL = os.getenv("SERVER_INVITE_URL", "")
 GAME_JOIN_URL = os.getenv("GAME_JOIN_URL", "")
@@ -149,6 +150,15 @@ def session_embed(title: str, description: str, banner_url: str, colour: discord
     return embed
 
 
+def get_session_channel(guild: discord.Guild) -> discord.TextChannel:
+    channel = guild.get_channel(SESSION_CHANNEL_ID)
+    if not isinstance(channel, discord.TextChannel):
+        raise RuntimeError(
+            f"Session channel {SESSION_CHANNEL_ID} was not found in {guild.name}."
+        )
+    return channel
+
+
 class SessionLinkView(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
@@ -192,7 +202,7 @@ class SessionVoteView(discord.ui.View):
         if vote_count >= required_votes and interaction.guild and interaction.channel:
             await interaction.response.defer()
             await interaction.message.edit(view=self)
-            await start_session(interaction.guild, interaction.channel)
+            await start_session(interaction.guild)
             await interaction.followup.send("The required votes were reached. The session has started.", ephemeral=True)
             return
         await interaction.response.edit_message(view=self)
@@ -251,10 +261,11 @@ class FeedbackRatingView(discord.ui.View):
         await interaction.response.send_modal(FeedbackNotesModal(self.recipient, rating))
 
 
-async def start_session(guild: discord.Guild, channel: discord.abc.Messageable) -> None:
+async def start_session(guild: discord.Guild) -> None:
     session = guild_data(guild.id)["session"]
     if session.get("active"):
         return
+    channel = get_session_channel(guild)
     voters = list(session.get("voters", []))
     session.update({"active": True, "required_votes": 0, "voters": [], "vote_message_id": None})
     save_data()
@@ -490,8 +501,8 @@ async def session_start(interaction: discord.Interaction) -> None:
     if session.get("active"):
         await interaction.response.send_message("A session is already active.", ephemeral=True)
         return
-    await interaction.response.defer()
-    await start_session(interaction.guild, interaction.channel)
+    await interaction.response.defer(ephemeral=True)
+    await start_session(interaction.guild)
     await interaction.followup.send("Session started.", ephemeral=True)
 
 
@@ -510,6 +521,9 @@ async def session_vote(
     session.update({"required_votes": int(required_votes), "voters": []})
     save_data()
     await interaction.response.send_message(
+        "Session vote opened in the session channel.", ephemeral=True
+    )
+    vote_message = await get_session_channel(interaction.guild).send(
         content="@here",
         embed=session_embed(
             "EL PASO RP | Session Vote",
@@ -519,7 +533,6 @@ async def session_vote(
         view=SessionVoteView(interaction.guild_id),
         allowed_mentions=discord.AllowedMentions(everyone=True),
     )
-    vote_message = await interaction.original_response()
     session["vote_message_id"] = vote_message.id
     save_data()
 
@@ -534,7 +547,8 @@ async def session_shutdown(interaction: discord.Interaction) -> None:
         return
     session.update({"active": False, "required_votes": 0, "voters": [], "vote_message_id": None})
     save_data()
-    await interaction.response.send_message(embed=session_embed(
+    await interaction.response.send_message("Session shutdown posted in the session channel.", ephemeral=True)
+    await get_session_channel(interaction.guild).send(embed=session_embed(
         "EL PASO RP | Session Shutdown",
         "The roleplay session has ended. Thank you for playing.",
         SESSION_SHUTDOWN_BANNER_URL,
@@ -548,7 +562,8 @@ async def session_boost(interaction: discord.Interaction) -> None:
     if not guild_data(interaction.guild_id)["session"].get("active"):
         await interaction.response.send_message("There is no active session to boost.", ephemeral=True)
         return
-    await interaction.response.send_message(embed=session_embed(
+    await interaction.response.send_message("Session boost posted in the session channel.", ephemeral=True)
+    await get_session_channel(interaction.guild).send(embed=session_embed(
         "EL PASO RP | Session Boost",
         "The active session needs more players. Join the game and help keep the roleplay moving.",
         SESSION_BOOST_BANNER_URL,
