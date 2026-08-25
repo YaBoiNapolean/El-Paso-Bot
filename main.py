@@ -30,6 +30,7 @@ ADMIN_ROLE_ID = env_int("ADMIN_ROLE_ID")
 SESSION_ROLE_ID = env_int("SESSION_ROLE_ID")
 LOG_CHANNEL_ID = env_int("LOG_CHANNEL_ID")
 SERVER_INVITE_URL = os.getenv("SERVER_INVITE_URL", "")
+GAME_JOIN_URL = os.getenv("GAME_JOIN_URL", "")
 SESSION_START_BANNER_URL = os.getenv("SESSION_START_BANNER_URL", "")
 SESSION_VOTE_BANNER_URL = os.getenv("SESSION_VOTE_BANNER_URL", "")
 SESSION_SHUTDOWN_BANNER_URL = os.getenv("SESSION_SHUTDOWN_BANNER_URL", "")
@@ -142,8 +143,8 @@ class SessionLinkView(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
         button = discord.ui.Button(
-            label="Join Server", style=discord.ButtonStyle.link,
-            url=SERVER_INVITE_URL or "https://discord.com", disabled=not bool(SERVER_INVITE_URL)
+            label="Join Game", style=discord.ButtonStyle.link,
+            url=GAME_JOIN_URL or "https://discord.com", disabled=not bool(GAME_JOIN_URL)
         )
         self.add_item(button)
 

@@ -38,9 +38,10 @@ Set these `.env` values to configure the bot:
 
 - `DISCORD_TOKEN`: bot token.
 - `BOT_DATA_FILE`: JSON persistence path.
-- `EMBED_COLOUR`: default embed color as an integer, such as `15264355` for `#e91e63`.
+- `EMBED_COLOUR`: default embed color as an integer, such as `16716947` for `#ff1493`.
 - `STAFF_ROLE_ID`, `ADMIN_ROLE_ID`, `SESSION_ROLE_ID`, and `LOG_CHANNEL_ID`: Discord IDs.
-- `SERVER_INVITE_URL`: invite URL used by the **Join Server** button on startup embeds.
+- `SERVER_INVITE_URL`: Discord invite URL used in the bot's presence.
+- `GAME_JOIN_URL`: in-game join URL used by the **Join Game** button on session startup embeds.
 - `SESSION_START_BANNER_URL`, `SESSION_VOTE_BANNER_URL`, `SESSION_SHUTDOWN_BANNER_URL`, and `SESSION_BOOST_BANNER_URL`: one image URL per session embed type.
 - `STAFF_FEEDBACK_BANNER_URL`: image URL shown at the bottom of staff feedback embeds.
 
