@@ -283,29 +283,34 @@ def remove_afk_prefix(nickname: str | None) -> str | None:
     return cleaned or None
 
 
-async def set_afk_nickname(member: discord.Member, is_afk: bool) -> None:
+async def set_afk_nickname(member: discord.Member, is_afk: bool) -> bool:
     try:
         if is_afk:
-            if not member.display_name.startswith("[AFK]"):
-                nickname = f"[AFK] {member.display_name}"[:32]
+            if not member.nick or not member.nick.startswith("[AFK]"):
+                nickname = f"[AFK] {member.nick or member.name}"[:32]
                 await member.edit(nick=nickname, reason="AFK status enabled")
+            return True
         else:
             nickname = remove_afk_prefix(member.nick)
             if member.nick and not nickname:
                 nickname = None
             if member.nick != nickname:
                 await member.edit(nick=nickname, reason="AFK status removed")
-    except (discord.Forbidden, discord.HTTPException):
-        pass
+            return True
+    except (discord.Forbidden, discord.HTTPException) as error:
+        print(f"Could not update AFK nickname for {member.id}: {error}")
+        return False
 
 
-async def clear_afk_nickname(member: discord.Member, original_nickname: str | None = None) -> None:
+async def clear_afk_nickname(member: discord.Member, original_nickname: str | None = None) -> bool:
     try:
-        nickname = original_nickname if original_nickname is not None else remove_afk_prefix(member.nick)
+        nickname = remove_afk_prefix(original_nickname) if original_nickname is not None else remove_afk_prefix(member.nick)
         if member.nick != nickname:
             await member.edit(nick=nickname, reason="AFK status removed")
-    except (discord.Forbidden, discord.HTTPException):
-        pass
+        return True
+    except (discord.Forbidden, discord.HTTPException) as error:
+        print(f"Could not clear AFK nickname for {member.id}: {error}")
+        return False
 
 
 class ElPasoBot(commands.Bot):
@@ -584,10 +589,15 @@ async def afk(interaction: discord.Interaction, reason: str = "Away") -> None:
     data["afk"][str(interaction.user.id)] = reason[:200]
     save_data()
     if isinstance(interaction.user, discord.Member):
-        data.setdefault("afk_nicknames", {})[str(interaction.user.id)] = interaction.user.nick
-        await set_afk_nickname(interaction.user, True)
+        data.setdefault("afk_nicknames", {})[str(interaction.user.id)] = remove_afk_prefix(interaction.user.nick)
+        nickname_updated = await set_afk_nickname(interaction.user, True)
         save_data()
-    await interaction.response.send_message(f"AFK enabled: **{reason[:200]}**", ephemeral=True)
+    else:
+        nickname_updated = False
+    message = f"AFK enabled: **{reason[:200]}**"
+    if not nickname_updated:
+        message += "\nI could not update your nickname. Make sure I have **Manage Nicknames** and my role is above yours."
+    await interaction.response.send_message(message, ephemeral=True)
 
 
 @bot.tree.command(name="afk-remove", description="Remove your AFK status")
@@ -597,8 +607,13 @@ async def afk_remove(interaction: discord.Interaction) -> None:
     original_nickname = data.get("afk_nicknames", {}).pop(str(interaction.user.id), None)
     save_data()
     if isinstance(interaction.user, discord.Member):
-        await clear_afk_nickname(interaction.user, original_nickname)
-    await interaction.response.send_message("Your AFK status has been removed.", ephemeral=True)
+        nickname_updated = await clear_afk_nickname(interaction.user, original_nickname)
+    else:
+        nickname_updated = False
+    message = "Your AFK status has been removed."
+    if not nickname_updated:
+        message += "\nI could not update your nickname. Make sure I have **Manage Nicknames** and my role is above yours."
+    await interaction.response.send_message(message, ephemeral=True)
 
 
 def permission_command(name: str, description: str, permission: str, access: str = "staff"):

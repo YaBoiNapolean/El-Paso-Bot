@@ -20,7 +20,7 @@ Neon pink, slash-command moderation for an El Paso, Texas roleplay community. Th
 2. Install dependencies: `python -m pip install -r requirements.txt`.
 3. Create a Discord application and bot at the Discord Developer Portal.
 4. Enable **Server Members Intent** and **Message Content Intent** under Bot settings.
-5. Invite it with the `bot` and `applications.commands` scopes. Grant the permissions needed by your server: View Channels, Send Messages, Embed Links, Manage Messages, Manage Channels, Manage Roles, Moderate Members, Kick Members, Ban Members, and View Audit Log.
+5. Invite it with the `bot` and `applications.commands` scopes. Grant the permissions needed by your server: View Channels, Send Messages, Embed Links, Manage Messages, Manage Channels, Manage Nicknames, Manage Roles, Moderate Members, Kick Members, Ban Members, and View Audit Log.
 6. Copy `.env` and fill in every value, including `DISCORD_TOKEN`, then start it:
 
 	Linux/macOS:
