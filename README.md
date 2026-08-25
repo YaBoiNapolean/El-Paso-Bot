@@ -28,7 +28,7 @@ Neon pink, slash-command moderation for an El Paso, Texas roleplay community. Th
 	python main.py
 	```
 
-Never commit the token. Slash commands are synced globally in `setup_hook`, so Discord may take a little time to display a newly added command.
+Never commit the token. By default, slash commands are synced globally in `setup_hook`, so Discord may take a little time to display a newly added command. For immediate testing, set `COMMAND_GUILD_ID` to the target server ID; commands will be synced directly to that server on startup.
 
 ## Role configuration
 
@@ -37,6 +37,8 @@ Set `STAFF_ROLE_ID`, `ADMIN_ROLE_ID`, `SESSION_ROLE_ID`, and `LOG_CHANNEL_ID` in
 Set these `.env` values to configure the bot:
 
 - `DISCORD_TOKEN`: bot token.
+- `COMMAND_GUILD_ID`: optional test server ID for immediate command registration; leave blank for global commands.
+- `ENABLE_PRIVILEGED_INTENTS`: set to `true` only after enabling Server Members Intent and Message Content Intent in the Developer Portal. Slash commands work with the default `false` value.
 - `BOT_DATA_FILE`: JSON persistence path.
 - `EMBED_COLOUR`: default embed color as an integer, such as `16716947` for `#ff1493`.
 - `STAFF_ROLE_ID`, `ADMIN_ROLE_ID`, `SESSION_ROLE_ID`, and `LOG_CHANNEL_ID`: Discord IDs.

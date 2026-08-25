@@ -24,6 +24,10 @@ def env_int(name: str) -> int:
 EMBED_COLOUR = discord.Colour(value=env_int("EMBED_COLOUR") or 0xE91E63)
 TOKEN = os.getenv("DISCORD_TOKEN")
 DATA_FILE = Path(os.getenv("BOT_DATA_FILE", "bot_data.json"))
+COMMAND_GUILD_ID = env_int("COMMAND_GUILD_ID")
+ENABLE_PRIVILEGED_INTENTS = os.getenv("ENABLE_PRIVILEGED_INTENTS", "false").lower() in {
+    "1", "true", "yes", "on"
+}
 
 STAFF_ROLE_ID = env_int("STAFF_ROLE_ID")
 ADMIN_ROLE_ID = env_int("ADMIN_ROLE_ID")
@@ -301,8 +305,9 @@ async def clear_afk_nickname(member: discord.Member, original_nickname: str | No
 class ElPasoBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
-        intents.members = True
-        intents.message_content = True
+        if ENABLE_PRIVILEGED_INTENTS:
+            intents.members = True
+            intents.message_content = True
         super().__init__(command_prefix="!", intents=intents, help_command=None)
 
     async def setup_hook(self) -> None:
@@ -310,7 +315,22 @@ class ElPasoBot(commands.Bot):
             session = data.get("session", {})
             if not session.get("active") and session.get("required_votes", 0):
                 self.add_view(SessionVoteView(int(guild_id), len(session.get("voters", []))))
-        await self.tree.sync()
+        try:
+            if COMMAND_GUILD_ID:
+                guild = discord.Object(id=COMMAND_GUILD_ID)
+                self.tree.copy_global_to(guild=guild)
+                synced = await self.tree.sync(guild=guild)
+                print(f"Synced {len(synced)} application commands to guild {COMMAND_GUILD_ID}")
+            else:
+                synced = await self.tree.sync()
+                print(f"Synced {len(synced)} global application commands")
+        except discord.Forbidden as error:
+            raise RuntimeError(
+                "Discord rejected application-command sync. Re-invite the bot with "
+                "the applications.commands scope and check the token."
+            ) from error
+        except discord.HTTPException as error:
+            raise RuntimeError(f"Discord application-command sync failed: {error}") from error
 
     @tasks.loop(seconds=3)
     async def rotate_presence(self) -> None:
