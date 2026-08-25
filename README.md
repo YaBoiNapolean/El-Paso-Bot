@@ -21,17 +21,10 @@ Neon pink, slash-command moderation for an El Paso, Texas roleplay community. Th
 3. Create a Discord application and bot at the Discord Developer Portal.
 4. Enable **Server Members Intent** and **Message Content Intent** under Bot settings.
 5. Invite it with the `bot` and `applications.commands` scopes. Grant the permissions needed by your server: View Channels, Send Messages, Embed Links, Manage Messages, Manage Channels, Manage Roles, Moderate Members, Kick Members, Ban Members, and View Audit Log.
-6. Set the token and start it:
+6. Copy `.env` and fill in every value, including `DISCORD_TOKEN`, then start it:
 
 	Linux/macOS:
 	```bash
-	export DISCORD_TOKEN="your-token"
-	python main.py
-	```
-
-	Windows PowerShell:
-	```powershell
-	$env:DISCORD_TOKEN = "your-token"
 	python main.py
 	```
 
@@ -39,12 +32,17 @@ Never commit the token. Slash commands are synced globally in `setup_hook`, so D
 
 ## Role configuration
 
-At the top of `main.py`, replace `STAFF_ROLE_ID = 0`, `ADMIN_ROLE_ID = 0`, `SESSION_ROLE_ID = 0`, and `LOG_CHANNEL_ID = 0` with your Discord role and channel IDs. The bot fails closed while a required role is still `0`. `SESSION_ROLE_ID` controls all four session-management commands. `LOG_CHANNEL_ID` is the default activity-log channel; `/logging channel` can override it for an individual server, while `/logging-disable` disables that server's logging. Enable Developer Mode in Discord, then right-click each role or channel and choose **Copy ID**.
+Set `STAFF_ROLE_ID`, `ADMIN_ROLE_ID`, `SESSION_ROLE_ID`, and `LOG_CHANNEL_ID` in `.env` to your Discord role and channel IDs. The bot fails closed while a required role is still `0`. `SESSION_ROLE_ID` controls all four session-management commands. `LOG_CHANNEL_ID` is the default activity-log channel; `/logging channel` can override it for an individual server, while `/logging-disable` disables that server's logging. Enable Developer Mode in Discord, then right-click each role or channel and choose **Copy ID**.
 
-Set these optional environment variables to add the session artwork and server invite used by the embeds:
+Set these `.env` values to configure the bot:
 
+- `DISCORD_TOKEN`: bot token.
+- `BOT_DATA_FILE`: JSON persistence path.
+- `EMBED_COLOUR`: default embed color as an integer, such as `15264355` for `#e91e63`.
+- `STAFF_ROLE_ID`, `ADMIN_ROLE_ID`, `SESSION_ROLE_ID`, and `LOG_CHANNEL_ID`: Discord IDs.
 - `SERVER_INVITE_URL`: invite URL used by the **Join Server** button on startup embeds.
 - `SESSION_START_BANNER_URL`, `SESSION_VOTE_BANNER_URL`, `SESSION_SHUTDOWN_BANNER_URL`, and `SESSION_BOOST_BANNER_URL`: one image URL per session embed type.
+- `STAFF_FEEDBACK_BANNER_URL`: image URL shown at the bottom of staff feedback embeds.
 
 Staff access is required for `/kick`, `/timeout`, `/untimeout`, `/warn`, `/warnings`, `/clearwarnings`, `/purge`, `/slowmode`, `/nickname`, `/say`, `/sticky`, and `/sticky-remove`.
 
@@ -102,6 +100,8 @@ Run `/directory` in Discord for the live, in-bot directory. It is maintained at 
 - `/ping`: Show latency and operational status.
 - `/directory`: Show the same live command map maintained in `main.py`.
 - `/help`: Show the El Paso RP overview.
+- `/staff-feedback member`: Select a 1-5 star rating and optionally add notes for a staff member.
+- `/feedback-leaderboard`: Show staff ranked by average feedback rating.
 
 ### Sessions
 

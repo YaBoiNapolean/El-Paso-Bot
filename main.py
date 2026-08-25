@@ -8,22 +8,33 @@ from typing import Any
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
+from dotenv import load_dotenv
 
-PINK = discord.Colour.from_rgb(255, 20, 147)
+load_dotenv()
+
+
+def env_int(name: str) -> int:
+    try:
+        return int(os.getenv(name, "0"))
+    except ValueError:
+        return 0
+
+
+EMBED_COLOUR = discord.Colour(value=env_int("EMBED_COLOUR") or 0xE91E63)
 TOKEN = os.getenv("DISCORD_TOKEN")
 DATA_FILE = Path(os.getenv("BOT_DATA_FILE", "bot_data.json"))
 
-# Replace these with the Discord role IDs used by your server.
-STAFF_ROLE_ID = 0
-ADMIN_ROLE_ID = 0
-SESSION_ROLE_ID = 0
-LOG_CHANNEL_ID = 0
+STAFF_ROLE_ID = env_int("STAFF_ROLE_ID")
+ADMIN_ROLE_ID = env_int("ADMIN_ROLE_ID")
+SESSION_ROLE_ID = env_int("SESSION_ROLE_ID")
+LOG_CHANNEL_ID = env_int("LOG_CHANNEL_ID")
 SERVER_INVITE_URL = os.getenv("SERVER_INVITE_URL", "")
 SESSION_START_BANNER_URL = os.getenv("SESSION_START_BANNER_URL", "")
 SESSION_VOTE_BANNER_URL = os.getenv("SESSION_VOTE_BANNER_URL", "")
 SESSION_SHUTDOWN_BANNER_URL = os.getenv("SESSION_SHUTDOWN_BANNER_URL", "")
 SESSION_BOOST_BANNER_URL = os.getenv("SESSION_BOOST_BANNER_URL", "")
+STAFF_FEEDBACK_BANNER_URL = os.getenv("STAFF_FEEDBACK_BANNER_URL", "")
 
 COMMAND_DIRECTORY = {
     "Moderation": {
@@ -46,6 +57,7 @@ COMMAND_DIRECTORY = {
         "/afk": "Set your AFK status.", "/afk-remove": "Remove your AFK status.",
         "/say": "Send text or a custom-color embed.", "/tax": "Calculate Roblox tax totals.",
         "/ping": "Check latency and status.", "/directory": "Show every command.",
+        "/staff-feedback": "Submit feedback for a staff member.", "/feedback-leaderboard": "Show the highest-rated staff.",
         "/help": "Show the El Paso RP help panel.",
     },
     "Sessions": {
@@ -71,9 +83,10 @@ DATA = load_data()
 
 def guild_data(guild_id: int) -> dict[str, Any]:
     data = DATA.setdefault("guilds", {}).setdefault(
-        str(guild_id), {"afk": {}, "warnings": {}, "stickies": {}}
+        str(guild_id), {"afk": {}, "warnings": {}, "stickies": {}, "feedback": []}
     )
     data.setdefault("session", {"active": False, "required_votes": 0, "voters": []})
+    data.setdefault("feedback", [])
     return data
 
 
@@ -81,8 +94,8 @@ def save_data() -> None:
     DATA_FILE.write_text(json.dumps(DATA, indent=2), encoding="utf-8")
 
 
-def make_embed(title: str, description: str, colour: discord.Colour = PINK) -> discord.Embed:
-    return discord.Embed(title=title, description=description, colour=colour)
+def make_embed(title: str, description: str, colour: discord.Colour = EMBED_COLOUR) -> discord.Embed:
+    return discord.Embed(description=f"## {title}\n\n{description}", colour=colour)
 
 
 def action_error(interaction: discord.Interaction, member: discord.Member) -> str | None:
@@ -118,7 +131,7 @@ admin_only = require_role(ADMIN_ROLE_ID, "admin")
 session_only = require_role(SESSION_ROLE_ID, "session perms")
 
 
-def session_embed(title: str, description: str, banner_url: str, colour: discord.Colour = PINK) -> discord.Embed:
+def session_embed(title: str, description: str, banner_url: str, colour: discord.Colour = EMBED_COLOUR) -> discord.Embed:
     embed = make_embed(title, description, colour)
     if banner_url:
         embed.set_image(url=banner_url)
@@ -175,6 +188,56 @@ class SessionVoteView(discord.ui.View):
         await interaction.followup.send(
             f"Vote recorded: **{vote_count}/{required_votes}**.", ephemeral=True
         )
+
+
+class FeedbackNotesModal(discord.ui.Modal, title="Staff Feedback Notes"):
+    notes = discord.ui.TextInput(
+        label="Notes (optional)", style=discord.TextStyle.paragraph,
+        required=False, max_length=1000, placeholder="Add any helpful details..."
+    )
+
+    def __init__(self, recipient: discord.Member, rating: int) -> None:
+        super().__init__()
+        self.recipient = recipient
+        self.rating = rating
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        feedback = guild_data(interaction.guild.id).setdefault("feedback", [])
+        feedback.append({
+            "recipient_id": self.recipient.id,
+            "recipient_name": str(self.recipient),
+            "submitter_id": interaction.user.id,
+            "rating": self.rating,
+            "notes": str(self.notes.value).strip() or "No notes provided.",
+        })
+        save_data()
+        rating_text = "☆" * self.rating
+        embed = session_embed(
+            "Staff Feedback",
+            f"**Reviewing:** {self.recipient.mention}\n**Submitted By:** {interaction.user.mention}\n**Rating:** {rating_text}\n**Notes:** {self.notes.value.strip() or 'No notes provided.'}\n\n*Thank you for submitting feedback.*",
+            STAFF_FEEDBACK_BANNER_URL,
+        )
+        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send("Thank you for submitting your feedback.", ephemeral=True)
+
+
+class FeedbackRatingView(discord.ui.View):
+    def __init__(self, recipient: discord.Member) -> None:
+        super().__init__(timeout=300)
+        self.recipient = recipient
+        select = discord.ui.Select(
+            placeholder="Choose a rating from 1 to 5",
+            options=[discord.SelectOption(label=f"{rating} star{'s' if rating != 1 else ''}", value=str(rating), description="☆" * rating) for rating in range(1, 6)],
+        )
+        select.callback = self.rating_selected
+        self.add_item(select)
+
+    async def rating_selected(self, interaction: discord.Interaction) -> None:
+        rating = int(interaction.data["values"][0])
+        await interaction.response.send_modal(FeedbackNotesModal(self.recipient, rating))
 
 
 async def start_session(guild: discord.Guild, channel: discord.abc.Messageable) -> None:
@@ -248,8 +311,20 @@ class ElPasoBot(commands.Bot):
                 self.add_view(SessionVoteView(int(guild_id), len(session.get("voters", []))))
         await self.tree.sync()
 
+    @tasks.loop(seconds=3)
+    async def rotate_presence(self) -> None:
+        member_count = sum(guild.member_count or len(guild.members) for guild in self.guilds)
+        activities = [
+            f"Monitoring {member_count} members in El Paso 🤠",
+            f"Join El Paso Texas Roleplay today {SERVER_INVITE_URL}".strip(),
+            f"Serving {len(self.guilds)} El Paso RP server(s)",
+        ]
+        activity = activities[self.rotate_presence.current_loop % len(activities)]
+        await self.change_presence(activity=discord.Game(activity))
+
     async def on_ready(self) -> None:
-        await self.change_presence(activity=discord.Game("El Paso RP | /directory"))
+        if not self.rotate_presence.is_running():
+            self.rotate_presence.start()
         print(f"Online as {self.user} in {len(self.guilds)} server(s)")
 
     async def on_message(self, message: discord.Message) -> None:
@@ -326,6 +401,47 @@ async def help_command(interaction: discord.Interaction) -> None:
         "El Paso RP Mod-Bot",
         "A neon pink moderation suite for private roleplay servers.\n\nUse **/directory** for the full command list. Moderation commands require the matching Discord permission.",
     ))
+
+
+@bot.tree.command(name="staff-feedback", description="Submit feedback for a staff member")
+@app_commands.guild_only()
+@app_commands.describe(member="The staff member being reviewed")
+async def staff_feedback(interaction: discord.Interaction, member: discord.Member) -> None:
+    await interaction.response.send_message(
+        f"Choose a rating for {member.mention}, then add optional notes.",
+        view=FeedbackRatingView(member), ephemeral=True,
+    )
+
+
+@bot.tree.command(name="feedback-leaderboard", description="Show the highest-rated staff members")
+@app_commands.guild_only()
+async def feedback_leaderboard(interaction: discord.Interaction) -> None:
+    records = guild_data(interaction.guild_id).get("feedback", [])
+    totals: dict[int, list[int]] = {}
+    names: dict[int, str] = {}
+    for record in records:
+        try:
+            recipient_id = int(record["recipient_id"])
+            rating = int(record["rating"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not 1 <= rating <= 5:
+            continue
+        totals.setdefault(recipient_id, []).append(rating)
+        names[recipient_id] = record.get("recipient_name", f"User {recipient_id}")
+
+    rankings = sorted(totals.items(), key=lambda item: (-sum(item[1]) / len(item[1]), -len(item[1])))[:10]
+    if not rankings:
+        description = "No staff feedback has been submitted yet."
+    else:
+        lines = []
+        for position, (member_id, ratings) in enumerate(rankings, 1):
+            member = interaction.guild.get_member(member_id)
+            mention = member.mention if member else names[member_id]
+            average = round(sum(ratings) / len(ratings), 1)
+            lines.append(f"**{position}.** {mention} | **{average:.1f} ☆** ({len(ratings)} review{'s' if len(ratings) != 1 else ''})")
+        description = "\n".join(lines)
+    await interaction.response.send_message(embed=make_embed("Feedback Leaderboard", description))
 
 
 @bot.tree.command(name="session-start", description="Start a roleplay session")
