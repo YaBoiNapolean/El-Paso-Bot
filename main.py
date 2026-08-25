@@ -122,8 +122,14 @@ class RoleRestrictionError(app_commands.CheckFailure):
 def require_role(role_id: int, role_name: str):
     async def predicate(interaction: discord.Interaction) -> bool:
         member = interaction.user
-        if role_id <= 0 or not isinstance(member, discord.Member):
+        if not isinstance(member, discord.Member):
+            raise RoleRestrictionError("This command can only be used in a server.")
+        if role_id <= 0:
             raise RoleRestrictionError(f"The {role_name} role is not configured for this bot yet.")
+        if member.guild.get_role(role_id) is None:
+            raise RoleRestrictionError(
+                f"The configured {role_name} role ({role_id}) was not found in this server."
+            )
         if not any(role.id == role_id for role in member.roles):
             raise RoleRestrictionError(f"You need the configured {role_name} role to use this command.")
         return True
@@ -317,7 +323,13 @@ class ElPasoBot(commands.Bot):
                 self.add_view(SessionVoteView(int(guild_id), len(session.get("voters", []))))
         try:
             if COMMAND_GUILD_ID:
+                global_commands = self.tree.get_commands()
+                self.tree.clear_commands(guild=None)
+                await self.tree.sync()
+                for command in global_commands:
+                    self.tree.add_command(command)
                 guild = discord.Object(id=COMMAND_GUILD_ID)
+                self.tree.clear_commands(guild=guild)
                 self.tree.copy_global_to(guild=guild)
                 synced = await self.tree.sync(guild=guild)
                 print(f"Synced {len(synced)} application commands to guild {COMMAND_GUILD_ID}")
